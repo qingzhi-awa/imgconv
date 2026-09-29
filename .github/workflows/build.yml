@@ -58,7 +58,7 @@ jobs:
         env:
           CGO_ENABLED: '1'
           GOPROXY: 'https://proxy.golang.org,direct'
-        run: go build -o imgconv .
+        run: go build -v -o imgconv .
 
       - name: Assemble fpk source
         run: |
