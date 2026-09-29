@@ -1,0 +1,15 @@
+# 多架构编译后端：在 Docker 容器里编译 cgo + libvips，产出 imgconv 二进制
+# 配合 `docker buildx build --platform linux/amd64,linux/arm64` 使用
+FROM golang:1.25 AS build
+ENV GOPROXY=https://goproxy.cn,direct
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libvips-dev pkg-config gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend/ ./
+RUN CGO_ENABLED=1 go build -o /imgconv .
+
+FROM scratch
+COPY --from=build /imgconv /imgconv

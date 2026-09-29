@@ -14,3 +14,5 @@ Thumbs.db
 imgConv/app/imgconv
 imgConv/app/dist/
 *.fpk
+fnpack
+build-out/

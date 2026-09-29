@@ -2,4 +2,23 @@
 
 ### This script is called after the user installs the application.
 
+# 确保后端二进制可执行
+if [ -f "${TRIM_APPDEST}/imgconv" ]; then
+  chmod +x "${TRIM_APPDEST}/imgconv"
+fi
+
+# 检测 libvips，缺失则通过 apt 安装（飞牛为 Debian 系）
+if ! ldconfig -p 2>/dev/null | grep -q "libvips"; then
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update >/dev/null 2>&1 || true
+    apt-get install -y --no-install-recommends libvips42 >/dev/null 2>&1 || {
+      echo "libvips 安装失败，请手动执行 apt install libvips42 后重试" > "${TRIM_TEMP_LOGFILE}"
+      exit 1
+    }
+  else
+    echo "系统缺少 libvips 且未找到 apt，无法自动安装" > "${TRIM_TEMP_LOGFILE}"
+    exit 1
+  fi
+fi
+
 exit 0
