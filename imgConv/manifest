@@ -1,0 +1,12 @@
+appname               = imgconv
+version               = 0.0.1
+display_name          = imgConv图片格式转换
+desc                  = 图片格式转换工具
+platform              = x86
+source                = thirdparty
+maintainer            = 青芷
+maintainer_url        = https://07qingzhi.cn
+distributor           = 青芷
+distributor_url       = https://07qingzhi.cn
+desktop_uidir         = ui
+desktop_applaunchname = imgconv.Application

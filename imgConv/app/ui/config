@@ -1,0 +1,16 @@
+{
+    ".url": {
+        "imgconv.Application": {
+            "title": "图片格式转换",
+            "icon": "images/icon_{0}.png",
+            "type": "iframe",
+            "protocol": "http",
+            "port": "5202",
+            "url": "/app/imgconv/",
+            "allUsers": true,
+            "gatewaySocket": "app.sock",
+            "gatewayPrefix": "/app/imgconv"
+        }
+    }
+}
+

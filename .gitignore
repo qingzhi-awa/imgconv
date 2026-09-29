@@ -1,0 +1,16 @@
+# Go
+backend/imgconv
+backend/imgconv.exe
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# fpk 打包产物
+imgConv/app/imgconv
+imgConv/app/dist/
+*.fpk

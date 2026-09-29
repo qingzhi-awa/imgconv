@@ -1,0 +1,86 @@
+name: Build fnOS fpk (x86 + arm)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: build-${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # amd64：ubuntu-24.04 的 libvips 8.14 与飞牛(Debian 12)的 libvips42 同为 soname .so.42，避免运行时缺库
+          - os: ubuntu-24.04
+            arch: amd64
+            platform: x86
+            fnpack_suffix: amd64
+          # arm64：GitHub arm64 托管 runner 仅对「公开仓库」开放
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            platform: arm
+            fnpack_suffix: arm64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+
+      - name: Install libvips
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libvips-dev
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Build backend
+        working-directory: backend
+        env:
+          CGO_ENABLED: '1'
+        run: go build -o imgconv .
+
+      - name: Assemble fpk source
+        run: |
+          cp backend/imgconv imgConv/app/imgconv
+          chmod +x imgConv/app/imgconv
+          rm -rf imgConv/app/dist
+          cp -r frontend/dist imgConv/app/dist
+          sed -i "s/^platform[[:space:]]*=.*/platform=${{ matrix.platform }}/" imgConv/manifest
+          chmod +x imgConv/cmd/*
+
+      - name: Install fnpack
+        run: |
+          curl -fL "https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-${{ matrix.fnpack_suffix }}" -o fnpack
+          chmod +x fnpack
+          sudo mv fnpack /usr/local/bin/fnpack
+
+      - name: Pack fpk
+        run: |
+          fnpack build -d imgConv
+          VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' imgConv/manifest | tr -d '[:space:]')"
+          mv imgconv.fpk "imgconv-${{ matrix.platform }}-${VERSION}.fpk"
+          ls -la *.fpk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: imgconv-${{ matrix.platform }}
+          path: imgconv-*.fpk
+          if-no-files-found: error

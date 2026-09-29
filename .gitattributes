@@ -1,0 +1,7 @@
+# 强制 LF 换行：bash 脚本与飞牛 fpk 脚本在 Windows 下也不能用 CRLF
+*.sh text eol=lf
+*.go text eol=lf
+imgConv/cmd/* text eol=lf
+imgConv/manifest text eol=lf
+imgConv/config/* text eol=lf
+imgConv/app/ui/config text eol=lf
