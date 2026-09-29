@@ -54,15 +54,17 @@ func main() {
 	}
 
 	handler := withCORS(mux)
+	// 统一剥离 /app/imgconv 前缀：飞牛桌面 iframe 直连 TCP 端口时 URL 带此前缀
+	stripHandler := http.StripPrefix("/app/imgconv", handler)
 
-	// TCP 监听：直接访问 / 局域网访问用
+	// TCP 监听：直接访问 / 局域网访问用（兼容带前缀的 iframe 直连）
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	go func() {
 		log.Printf("监听 TCP :%s", port)
-		if err := http.ListenAndServe(":"+port, handler); err != nil {
+		if err := http.ListenAndServe(":"+port, stripHandler); err != nil {
 			log.Fatalf("TCP 服务退出: %v", err)
 		}
 	}()
@@ -77,8 +79,7 @@ func main() {
 		_ = os.Chmod(sock, 0o666)
 		log.Printf("统一网关 Socket 已监听: %s", sock)
 		go func() {
-			// 网关转发时保留 /app/imgconv 前缀，这里剥离后再交给路由
-			if err := http.Serve(sockLn, http.StripPrefix("/app/imgconv", handler)); err != nil {
+			if err := http.Serve(sockLn, stripHandler); err != nil {
 				log.Fatalf("Socket 服务退出: %v", err)
 			}
 		}()
