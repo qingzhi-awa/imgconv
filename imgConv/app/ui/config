@@ -6,10 +6,8 @@
             "type": "iframe",
             "protocol": "http",
             "port": "5202",
-            "url": "/app/imgconv/",
-            "allUsers": true,
-            "gatewaySocket": "app.sock",
-            "gatewayPrefix": "/app/imgconv"
+            "url": "/",
+            "allUsers": true
         }
     }
 }
