@@ -227,11 +227,17 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir := r.FormValue("dir")
+	dirParam := r.FormValue("dir")
+	dir := dirParam
 	if dir == "" {
 		dir = saveDir()
 	}
 	dir = filepath.Clean(dir)
+	// 用户通过文件选择器选定的目录需鉴权；默认应用数据目录不鉴权
+	if dirParam != "" && !checkAccess(r, dir) {
+		httpError(w, http.StatusForbidden, "无权访问该路径")
+		return
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		httpError(w, http.StatusInternalServerError, "创建保存目录失败")
 		return
@@ -265,11 +271,15 @@ func saveDir() string {
 func handleListDirs(w http.ResponseWriter, r *http.Request) {
 	dir := r.URL.Query().Get("path")
 	if dir == "" {
-		dir = saveRoot()
+		dir = defaultRoot(r)
 	}
 	dir = filepath.Clean(dir)
 	if !filepath.IsAbs(dir) {
 		httpError(w, http.StatusBadRequest, "路径必须是绝对路径")
+		return
+	}
+	if !checkAccess(r, dir) {
+		httpError(w, http.StatusForbidden, "无权访问该路径")
 		return
 	}
 
@@ -285,7 +295,7 @@ func handleListDirs(w http.ResponseWriter, r *http.Request) {
 	}
 	subdirs := make([]dirEntry, 0)
 	for _, e := range entries {
-		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !strings.HasPrefix(e.Name(), "@") {
 			subdirs = append(subdirs, dirEntry{Name: e.Name(), Path: filepath.Join(dir, e.Name())})
 		}
 	}
@@ -324,11 +334,15 @@ func isImageFile(name string) bool {
 func handleBrowse(w http.ResponseWriter, r *http.Request) {
 	dir := r.URL.Query().Get("path")
 	if dir == "" {
-		dir = saveRoot()
+		dir = defaultRoot(r)
 	}
 	dir = filepath.Clean(dir)
 	if !filepath.IsAbs(dir) {
 		httpError(w, http.StatusBadRequest, "路径必须是绝对路径")
+		return
+	}
+	if !checkAccess(r, dir) {
+		httpError(w, http.StatusForbidden, "无权访问该路径")
 		return
 	}
 
@@ -346,7 +360,7 @@ func handleBrowse(w http.ResponseWriter, r *http.Request) {
 	dirs := make([]entry, 0)
 	files := make([]entry, 0)
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") {
+		if strings.HasPrefix(e.Name(), ".") || strings.HasPrefix(e.Name(), "@") {
 			continue
 		}
 		p := filepath.Join(dir, e.Name())
@@ -377,6 +391,10 @@ func handleRead(w http.ResponseWriter, r *http.Request) {
 	p = filepath.Clean(p)
 	if !filepath.IsAbs(p) {
 		httpError(w, http.StatusBadRequest, "路径必须是绝对路径")
+		return
+	}
+	if !checkAccess(r, p) {
+		httpError(w, http.StatusForbidden, "无权访问该路径")
 		return
 	}
 	if !isImageFile(p) {
