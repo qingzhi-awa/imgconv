@@ -54,16 +54,17 @@ func main() {
 	// 统一网关转发时 URL 带 /app/imgconv 前缀，这里剥离后再交给路由
 	stripHandler := http.StripPrefix("/app/imgconv", handler)
 
-	// TCP 监听：仅在设置 PORT 时开启（本地开发/直连用）。
-	// 飞牛部署走统一网关（app.sock），不监听 TCP，避免绕过网关鉴权直连。
-	if port := os.Getenv("PORT"); port != "" {
-		go func() {
-			log.Printf("监听 TCP :%s", port)
-			if err := http.ListenAndServe(":"+port, stripHandler); err != nil {
-				log.Fatalf("TCP 服务退出: %v", err)
-			}
-		}()
+	// TCP 监听：直接访问 / 局域网访问用
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
+	go func() {
+		log.Printf("监听 TCP :%s", port)
+		if err := http.ListenAndServe(":"+port, stripHandler); err != nil {
+			log.Fatalf("TCP 服务退出: %v", err)
+		}
+	}()
 
 	// Unix Socket 监听：飞牛统一网关（网关只转发到 target 目录下的 app.sock）
 	if sock := os.Getenv("GATEWAY_SOCK"); sock != "" {
