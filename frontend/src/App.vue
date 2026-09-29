@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { fetchFormats, convertImage, animateImages, downloadBlob, saveToServer, listDirs, browseFnos, readFnosFile, fetchFSRoots } from './api'
+import { fetchFormats, convertImage, animateImages, downloadBlob, saveToServer, readFnosFile } from './api'
+import { pickImages, pickDirectory } from './sdk'
 
 const formats = ref([])
 const files = ref([])
@@ -17,18 +18,6 @@ const resultUrl = ref('')
 const resultBlob = ref(null)
 const resultFilename = ref('')
 const saving = ref(false)
-const pickerOpen = ref(false)
-const pickerCurrent = ref('')
-const pickerParent = ref('')
-const pickerDirs = ref([])
-const pickerLoading = ref(false)
-const filePickerOpen = ref(false)
-const filePickerCurrent = ref('')
-const filePickerParent = ref('')
-const filePickerDirs = ref([])
-const filePickerFiles = ref([])
-const filePickerLoading = ref(false)
-const roots = ref([])
 
 const selectedFormat = computed(() =>
   formats.value.find((f) => f.id === selectedId.value) || null
@@ -159,119 +148,40 @@ function downloadLocal() {
   if (resultBlob.value) downloadBlob(resultBlob.value, resultFilename.value)
 }
 
-async function loadRoots() {
-  if (roots.value.length) return
+// 从飞牛选择图片（调用飞牛官方文件选择器，选择后自动授权）
+async function openFnosPicker() {
+  error.value = ''
+  done.value = ''
   try {
-    roots.value = await fetchFSRoots()
-  } catch (_) {
-    /* 侧栏加载失败不影响主流程 */
-  }
-}
-
-function pathParts(p) {
-  if (!p || p === '/') return []
-  return p.split('/').filter(Boolean).map((seg, i, arr) => ({
-    name: seg,
-    path: '/' + arr.slice(0, i + 1).join('/')
-  }))
-}
-
-function isActiveRoot(path, rootPath) {
-  if (!rootPath || rootPath === '/') return path === rootPath
-  return path === rootPath || path.startsWith(rootPath + '/')
-}
-
-async function saveToNas() {
-  if (!resultBlob.value) return
-  pickerOpen.value = true
-  loadRoots()
-  await loadDirs('')
-}
-
-async function loadDirs(path) {
-  pickerLoading.value = true
-  try {
-    const data = await listDirs(path)
-    pickerCurrent.value = data.current
-    pickerParent.value = data.parent
-    pickerDirs.value = data.dirs
+    const paths = await pickImages()
+    if (!paths.length) return
+    const picked = []
+    for (const p of paths) {
+      const blob = await readFnosFile(p)
+      const name = p.split('/').pop() || 'image.png'
+      picked.push(new File([blob], name, { type: blob.type || 'image/*' }))
+    }
+    addFiles(picked)
   } catch (e) {
     error.value = e.message
-  } finally {
-    pickerLoading.value = false
   }
 }
 
-function enterDir(path) {
-  loadDirs(path)
-}
-
-function goParent() {
-  if (pickerParent.value) loadDirs(pickerParent.value)
-}
-
-function closePicker() {
-  pickerOpen.value = false
-}
-
-async function confirmSave() {
-  const dir = pickerCurrent.value
-  pickerOpen.value = false
+// 保存到飞牛（选择目录后自动授权，再写入）
+async function saveToNas() {
+  if (!resultBlob.value) return
   saving.value = true
   error.value = ''
   done.value = ''
   try {
+    const dir = await pickDirectory()
+    if (!dir) return
     const p = await saveToServer(resultBlob.value, resultFilename.value, dir)
     done.value = `已保存到飞牛：${p}`
   } catch (e) {
     error.value = e.message
   } finally {
     saving.value = false
-  }
-}
-
-async function openFilePicker() {
-  filePickerOpen.value = true
-  loadRoots()
-  await loadFilePicker('')
-}
-
-async function loadFilePicker(path) {
-  filePickerLoading.value = true
-  try {
-    const data = await browseFnos(path)
-    filePickerCurrent.value = data.current
-    filePickerParent.value = data.parent
-    filePickerDirs.value = data.dirs
-    filePickerFiles.value = data.files
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    filePickerLoading.value = false
-  }
-}
-
-function enterFileDir(path) {
-  loadFilePicker(path)
-}
-
-function goFileParent() {
-  if (filePickerParent.value) loadFilePicker(filePickerParent.value)
-}
-
-function closeFilePicker() {
-  filePickerOpen.value = false
-}
-
-async function selectFnosFile(path, name) {
-  closeFilePicker()
-  try {
-    const blob = await readFnosFile(path)
-    const file = new File([blob], name, { type: blob.type || 'image/*' })
-    addFiles([file])
-    done.value = ''
-  } catch (e) {
-    error.value = e.message
   }
 }
 
@@ -313,7 +223,7 @@ onBeforeUnmount(() => {
           </p>
           <div class="drop-actions">
             <button type="button" class="ghost" @click.stop="pick">本地上传</button>
-            <button type="button" class="ghost" @click.stop="openFilePicker">从飞牛选择</button>
+            <button type="button" class="ghost" @click.stop="openFnosPicker">从飞牛选择</button>
           </div>
         </template>
 
@@ -417,120 +327,5 @@ onBeforeUnmount(() => {
       <p v-if="error" class="msg error">{{ error }}</p>
       <p v-else-if="done" class="msg done">{{ done }}</p>
     </main>
-
-    <!-- 目录选择弹窗 -->
-    <div v-if="pickerOpen" class="modal-mask" @click.self="closePicker">
-      <div class="modal picker-modal">
-        <div class="modal-head">
-          <span class="modal-title">选择保存位置</span>
-          <button type="button" class="modal-close" @click="closePicker">×</button>
-        </div>
-        <div class="modal-body">
-          <aside class="picker-side">
-            <button
-              v-for="r in roots"
-              :key="r.path"
-              type="button"
-              class="side-item"
-              :class="{ active: isActiveRoot(pickerCurrent, r.path) }"
-              @click="enterDir(r.path)"
-            >
-              <svg class="side-icon" viewBox="0 0 24 24" fill="none">
-                <rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.6" />
-                <circle cx="7" cy="12" r="1.2" fill="currentColor" />
-                <path d="M14 12h7" stroke="currentColor" stroke-width="1.6" />
-              </svg>
-              <span>{{ r.name }}</span>
-            </button>
-          </aside>
-          <div class="picker-main">
-            <div class="crumbs">
-              <button type="button" class="crumb up" :disabled="!pickerParent" @click="goParent">↑</button>
-              <template v-for="(p, i) in pathParts(pickerCurrent)" :key="p.path">
-                <span v-if="i > 0" class="crumb-sep">/</span>
-                <button type="button" class="crumb" @click="enterDir(p.path)">{{ p.name }}</button>
-              </template>
-            </div>
-            <div class="modal-list">
-              <p v-if="pickerLoading" class="msg">加载中…</p>
-              <p v-else-if="!pickerDirs.length" class="msg empty">此目录下没有子文件夹</p>
-              <button v-for="d in pickerDirs" :key="d.path" type="button" class="dir-item" @click="enterDir(d.path)">
-                <svg class="file-icon folder" viewBox="0 0 24 24">
-                  <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" fill="#f6b73c" />
-                  <path d="M3 10h18" stroke="#fff" stroke-width="1.4" />
-                </svg>
-                <span class="item-name">{{ d.name }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-        <div class="modal-foot">
-          <button type="button" class="ghost" @click="closePicker">取消</button>
-          <button type="button" class="primary" @click="confirmSave">保存到此处</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 从飞牛选择图片弹窗 -->
-    <div v-if="filePickerOpen" class="modal-mask" @click.self="closeFilePicker">
-      <div class="modal picker-modal">
-        <div class="modal-head">
-          <span class="modal-title">从飞牛选择图片</span>
-          <button type="button" class="modal-close" @click="closeFilePicker">×</button>
-        </div>
-        <div class="modal-body">
-          <aside class="picker-side">
-            <button
-              v-for="r in roots"
-              :key="r.path"
-              type="button"
-              class="side-item"
-              :class="{ active: isActiveRoot(filePickerCurrent, r.path) }"
-              @click="enterFileDir(r.path)"
-            >
-              <svg class="side-icon" viewBox="0 0 24 24" fill="none">
-                <rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.6" />
-                <circle cx="7" cy="12" r="1.2" fill="currentColor" />
-                <path d="M14 12h7" stroke="currentColor" stroke-width="1.6" />
-              </svg>
-              <span>{{ r.name }}</span>
-            </button>
-          </aside>
-          <div class="picker-main">
-            <div class="crumbs">
-              <button type="button" class="crumb up" :disabled="!filePickerParent" @click="goFileParent">↑</button>
-              <template v-for="(p, i) in pathParts(filePickerCurrent)" :key="p.path">
-                <span v-if="i > 0" class="crumb-sep">/</span>
-                <button type="button" class="crumb" @click="enterFileDir(p.path)">{{ p.name }}</button>
-              </template>
-            </div>
-            <div class="modal-list">
-              <p v-if="filePickerLoading" class="msg">加载中…</p>
-              <template v-else>
-                <p v-if="!filePickerDirs.length && !filePickerFiles.length" class="msg empty">此目录下没有文件夹或图片</p>
-                <button v-for="d in filePickerDirs" :key="d.path" type="button" class="dir-item" @click="enterFileDir(d.path)">
-                  <svg class="file-icon folder" viewBox="0 0 24 24">
-                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" fill="#f6b73c" />
-                    <path d="M3 10h18" stroke="#fff" stroke-width="1.4" />
-                  </svg>
-                  <span class="item-name">{{ d.name }}</span>
-                </button>
-                <button v-for="f in filePickerFiles" :key="f.path" type="button" class="dir-item" @click="selectFnosFile(f.path, f.name)">
-                  <svg class="file-icon image" viewBox="0 0 24 24">
-                    <rect x="3" y="4" width="18" height="16" rx="2" fill="#7c8db5" />
-                    <circle cx="8.5" cy="9" r="1.6" fill="#fff" />
-                    <path d="M4 18l5-5 3 3 3-3 5 5" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                  <span class="item-name">{{ f.name }}</span>
-                </button>
-              </template>
-            </div>
-          </div>
-        </div>
-        <div class="modal-foot">
-          <button type="button" class="ghost" @click="closeFilePicker">取消</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>

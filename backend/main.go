@@ -32,11 +32,8 @@ func main() {
 	mux.HandleFunc("GET /api/health", handleHealth)
 	mux.HandleFunc("GET /api/formats", handleFormats)
 	mux.HandleFunc("POST /api/convert", handleConvert)
-	mux.HandleFunc("GET /api/fs/roots", handleFSRoots)
 	mux.HandleFunc("POST /api/animate", handleAnimate)
 	mux.HandleFunc("POST /api/save", handleSave)
-	mux.HandleFunc("GET /api/dirs", handleListDirs)
-	mux.HandleFunc("GET /api/browse", handleBrowse)
 	mux.HandleFunc("GET /api/read", handleRead)
 
 	// 托管前端静态文件（若已构建），使一个二进制即可同时提供 API 与页面。
@@ -227,17 +224,11 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dirParam := r.FormValue("dir")
-	dir := dirParam
+	dir := r.FormValue("dir")
 	if dir == "" {
 		dir = saveDir()
 	}
 	dir = filepath.Clean(dir)
-	// 用户通过文件选择器选定的目录需鉴权；默认应用数据目录不鉴权
-	if dirParam != "" && !checkAccess(r, dir) {
-		httpError(w, http.StatusForbidden, "无权访问该路径")
-		return
-	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		httpError(w, http.StatusInternalServerError, "创建保存目录失败")
 		return
@@ -267,59 +258,7 @@ func saveDir() string {
 	return "saved"
 }
 
-// handleListDirs 列出指定目录下的子目录，供前端目录选择器使用。
-func handleListDirs(w http.ResponseWriter, r *http.Request) {
-	dir := r.URL.Query().Get("path")
-	if dir == "" {
-		dir = defaultRoot(r)
-	}
-	dir = filepath.Clean(dir)
-	if !filepath.IsAbs(dir) {
-		httpError(w, http.StatusBadRequest, "路径必须是绝对路径")
-		return
-	}
-	if !checkAccess(r, dir) {
-		httpError(w, http.StatusForbidden, "无权访问该路径")
-		return
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		httpError(w, http.StatusBadRequest, "无法读取目录："+err.Error())
-		return
-	}
-
-	type dirEntry struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
-	}
-	subdirs := make([]dirEntry, 0)
-	for _, e := range entries {
-		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !strings.HasPrefix(e.Name(), "@") {
-			subdirs = append(subdirs, dirEntry{Name: e.Name(), Path: filepath.Join(dir, e.Name())})
-		}
-	}
-	sort.Slice(subdirs, func(i, j int) bool { return subdirs[i].Name < subdirs[j].Name })
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"current": dir,
-		"parent":  filepath.Dir(dir),
-		"dirs":    subdirs,
-	})
-}
-
-// saveRoot 返回目录浏览的默认根目录，可通过 SAVE_ROOT 覆盖。
-func saveRoot() string {
-	if d := os.Getenv("SAVE_ROOT"); d != "" {
-		return d
-	}
-	if _, err := os.Stat("/vol1"); err == nil {
-		return "/vol1"
-	}
-	return "/"
-}
-
-// imageExts 支持的图片扩展名，用于"从飞牛选图"时筛选文件。
+// imageExts 支持的图片扩展名，用于校验读取的图片文件。
 var imageExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true,
 	".tiff": true, ".avif": true, ".heic": true, ".heif": true, ".bmp": true,
@@ -328,57 +267,6 @@ var imageExts = map[string]bool{
 
 func isImageFile(name string) bool {
 	return imageExts[strings.ToLower(filepath.Ext(name))]
-}
-
-// handleBrowse 列出指定目录下的子目录与图片文件，供前端文件选择器使用。
-func handleBrowse(w http.ResponseWriter, r *http.Request) {
-	dir := r.URL.Query().Get("path")
-	if dir == "" {
-		dir = defaultRoot(r)
-	}
-	dir = filepath.Clean(dir)
-	if !filepath.IsAbs(dir) {
-		httpError(w, http.StatusBadRequest, "路径必须是绝对路径")
-		return
-	}
-	if !checkAccess(r, dir) {
-		httpError(w, http.StatusForbidden, "无权访问该路径")
-		return
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		httpError(w, http.StatusBadRequest, "无法读取目录："+err.Error())
-		return
-	}
-
-	type entry struct {
-		Name  string `json:"name"`
-		Path  string `json:"path"`
-		IsDir bool   `json:"isDir"`
-	}
-	dirs := make([]entry, 0)
-	files := make([]entry, 0)
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") || strings.HasPrefix(e.Name(), "@") {
-			continue
-		}
-		p := filepath.Join(dir, e.Name())
-		if e.IsDir() {
-			dirs = append(dirs, entry{Name: e.Name(), Path: p, IsDir: true})
-		} else if isImageFile(e.Name()) {
-			files = append(files, entry{Name: e.Name(), Path: p, IsDir: false})
-		}
-	}
-	sort.Slice(dirs, func(i, j int) bool { return dirs[i].Name < dirs[j].Name })
-	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"current": dir,
-		"parent":  filepath.Dir(dir),
-		"dirs":    dirs,
-		"files":   files,
-	})
 }
 
 // handleRead 读取飞牛上指定文件的内容（供前端把飞牛图片拉入上传列表）。
@@ -391,10 +279,6 @@ func handleRead(w http.ResponseWriter, r *http.Request) {
 	p = filepath.Clean(p)
 	if !filepath.IsAbs(p) {
 		httpError(w, http.StatusBadRequest, "路径必须是绝对路径")
-		return
-	}
-	if !checkAccess(r, p) {
-		httpError(w, http.StatusForbidden, "无权访问该路径")
 		return
 	}
 	if !isImageFile(p) {

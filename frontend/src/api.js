@@ -48,25 +48,6 @@ export async function animateImages(files, delay) {
   return res.blob()
 }
 
-export async function fetchFSRoots() {
-  const res = await fetch(`${BASE}/fs/roots`)
-  if (!res.ok) throw new Error('获取存储入口失败')
-  const data = await res.json()
-  return data.roots
-}
-
-export async function listDirs(path) {
-  const res = await fetch(`${BASE}/dirs?path=${encodeURIComponent(path || '')}`)
-  if (!res.ok) throw new Error('读取目录失败')
-  return res.json()
-}
-
-export async function browseFnos(path) {
-  const res = await fetch(`${BASE}/browse?path=${encodeURIComponent(path || '')}`)
-  if (!res.ok) throw new Error('读取目录失败')
-  return res.json()
-}
-
 export async function readFnosFile(path) {
   const res = await fetch(`${BASE}/read?path=${encodeURIComponent(path)}`)
   if (!res.ok) throw new Error('读取文件失败')

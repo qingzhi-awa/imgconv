@@ -10,5 +10,6 @@ distributor           = 青芷
 distributor_url       = https://07qingzhi.cn
 service_port          = 5202
 checkport             = true
+micro_app             = true
 desktop_uidir         = ui
 desktop_applaunchname = imgconv.Application
